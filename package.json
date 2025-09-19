@@ -1,0 +1,25 @@
+{
+  "name": "markdeep-static",
+  "version": "1.0.0",
+  "description": "This tool builds on casual-effects' markdeep project to generate static websites using node.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xoorath/markdeep-static.git"
+  },
+  "main": "app.js",
+  "type": "module",
+  "keywords": [
+    "markdeep",
+    "markdown",
+    "md"
+  ],
+  "author": "xo",
+  "license": "BSD-2-Clause",
+  "bugs": {
+    "url": "https://github.com/xoorath/markdeep-static/issues"
+  },
+  "homepage": "https://github.com/xoorath/markdeep-static#readme",
+  "dependencies": {
+    "puppeteer": "^24.21.0"
+  }
+}
