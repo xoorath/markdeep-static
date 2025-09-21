@@ -1,6 +1,35 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
+const ColorReset = "\x1b[0m";
+const ColorBright = "\x1b[1m";
+const ColorDim = "\x1b[2m";
+const ColorUnderscore = "\x1b[4m";
+const ColorBlink = "\x1b[5m";
+const ColorReverse = "\x1b[7m";
+const ColorHidden = "\x1b[8m";
+
+const ColorFgBlack = "\x1b[30m";
+const ColorFgRed = "\x1b[31m";
+const ColorFgGreen = "\x1b[32m";
+const ColorFgYellow = "\x1b[33m";
+const ColorFgBlue = "\x1b[34m";
+const ColorFgMagenta = "\x1b[35m";
+const ColorFgCyan = "\x1b[36m";
+const ColorFgWhite = "\x1b[37m";
+const ColorFgGray = "\x1b[90m";
+
+const ColorBgBlack = "\x1b[40m";
+const ColorBgRed = "\x1b[41m";
+const ColorBgGreen = "\x1b[42m";
+const ColorBgYellow = "\x1b[43m";
+const ColorBgBlue = "\x1b[44m";
+const ColorBgMagenta = "\x1b[45m";
+const ColorBgCyan = "\x1b[46m";
+const ColorBgWhite = "\x1b[47m";
+const ColorBgGray = "\x1b[100m";
+
+
 function printHelp(printFunction=console.log) {
     printFunction(`usage: markdeep-static --in="./input_dir" --out"./output_dir"`);
 }
@@ -32,11 +61,14 @@ function parseArg(short, long) {
     }
 }
 
+console.time(`${ColorFgCyan}parse arguments${ColorReset}`);
 const args = {
     in: parseArg('i', 'in'),
     out: parseArg('o', 'out')
 };
+console.timeEnd(`${ColorFgCyan}parse arguments${ColorReset}`);
 
+console.time(`${ColorFgCyan}error handling${ColorReset}`);
 if (!args.in) {
     printHelp(console.error);
     process.exit(-1);
@@ -61,12 +93,20 @@ if (!fs.statSync(args.out).isDirectory()) {
     console.error(`error: output isn't a directory. output: ${args.out}`);
     process.exit(-1);
 }
+console.timeEnd(`${ColorFgCyan}error handling${ColorReset}`);
 
-const globInMarkdeep = fs.globSync(path.join(args.in, '**/*.md'));
+console.time(`${ColorFgGreen}markdeep-static${ColorReset}`); // overall
+
+console.time(`${ColorFgCyan}glob markdeep${ColorReset}`);
+const globInMarkdeep =  fs.globSync(path.join(args.in, '**/*.md'));
+console.timeEnd(`${ColorFgCyan}glob markdeep${ColorReset}`);
+console.time(`${ColorFgCyan}glob other${ColorReset}`);
 const globInOther = fs.globSync(path.join(args.in, '**'))
     .filter(inputFile => !globInMarkdeep.find(x=>x===inputFile))
     .filter(inputFile => !fs.statSync(inputFile).isDirectory());
+console.timeEnd(`${ColorFgCyan}glob other${ColorReset}`);
 
+console.time(`${ColorFgCyan}build markdeep transformation pairs${ColorReset}`);
 const markdeepTransformPairs = globInMarkdeep.map((inputFile) => {
     return { 
         in: path.resolve(inputFile),
@@ -79,7 +119,9 @@ const markdeepTransformPairs = globInMarkdeep.map((inputFile) => {
             ))
     };
 });
+console.timeEnd(`${ColorFgCyan}build markdeep transformation pairs${ColorReset}`);
 
+console.time(`${ColorFgCyan}build other transformation pairs${ColorReset}`);
 const otherTransformPairs = globInOther.map((inputFile) => {
     return { 
         in: path.resolve(inputFile),
@@ -92,23 +134,74 @@ const otherTransformPairs = globInOther.map((inputFile) => {
             ))
     };
 });
+console.timeEnd(`${ColorFgCyan}build other transformation pairs${ColorReset}`);
 
-console.log(markdeepTransformPairs);
-console.log(otherTransformPairs);
+console.time(`${ColorFgCyan}glob files to delete${ColorReset}`);
+const filesToDelete = fs.globSync(path.join(args.out, '**'), { exclude: ['.git'] })
+    .filter(existingPath => !fs.statSync(existingPath).isDirectory() )
+    .map(existingPath => path.resolve(existingPath));
+console.timeEnd(`${ColorFgCyan}glob files to delete${ColorReset}`);
 
+console.time(`${ColorFgCyan}delete files${ColorReset}`);
+filesToDelete.forEach(existingFile => {
+    console.log(`rm ${path.relative(process.cwd(), existingFile)}`);
+    fs.unlinkSync(existingFile);
+})
+console.timeEnd(`${ColorFgCyan}delete files${ColorReset}`);
+
+// stats to print when finished:
+let stats = {
+    filesCopied: 0,
+    filesTransformed: 0
+};
+
+console.time(`${ColorFgCyan}make output directories${ColorReset}`);
 markdeepTransformPairs
+    // go through all of the directories in markdeepTransformPairs and 
+    // otherTransformPairs and create any needed directories.
     .map(p => path.dirname(p.out))
     .concat(otherTransformPairs.map(p => path.dirname(p.out)))
+        // remove any duplicates
         .filter((v, i, a) => a.indexOf(v) === i)
+        // sort the directories longest to shortest (by number of folders)
+        // this is to create as few calls to mkdir as possible
+        // we only do that so we can write fewer lines of log output
+        .sort((a,b) => {
+            let pred = d => d.split('/').filter(seg => seg !== '');
+            let countA = pred(a);
+            let countB = pred(b);
+            if (countA !== countB) return countA - countB;
+            return a.localCompare(b);
+        })
+        // create any directories that don't already exist
         .forEach(dir => {
-            if (!fs.existsSync(dir))
+            if (!fs.existsSync(dir)) {
+                console.log(`mkdir ${dir}`);
                 fs.mkdirSync(dir, {recursive:true});
+            }
         });
+console.timeEnd(`${ColorFgCyan}make output directories${ColorReset}`);
 
+
+console.time(`${ColorFgCyan}copy non-markdeep files${ColorReset}`);
 otherTransformPairs.forEach(t => {
-    fs.copyFile(t.in, t.out, fs.constants.COPYFILE_FICLONE, err => err && console.error(err));
+    console.log(`cp ${path.relative(process.cwd(), t.in)} -> ${path.relative(process.cwd(), t.out)}`);
+    fs.copyFileSync(t.in, t.out, fs.constants.COPYFILE_FICLONE, err => err && console.error(err));
+    stats.filesCopied++;
 });
+console.timeEnd(`${ColorFgCyan}copy non-markdeep files${ColorReset}`);
 
+console.time(`${ColorFgCyan}transform markdeep${ColorReset}`);
 markdeepTransformPairs.forEach(t => {
+    console.log(`xform ${path.relative(process.cwd(), t.in)} -> ${path.relative(process.cwd(), t.out)}`);
     fs.copyFile(t.in, t.out, fs.constants.COPYFILE_FICLONE, err => err && console.error(err));
+    stats.filesTransformed++;
 });
+console.timeEnd(`${ColorFgCyan}transform markdeep${ColorReset}`);
+
+console.timeEnd(`${ColorFgGreen}markdeep-static${ColorReset}`); // overall
+
+console.log(`----------------------------------------
+transformed: ${stats.filesTransformed} copied: ${stats.filesCopied}
+----------------------------------------
+markdeep-static finished`);
