@@ -20,6 +20,6 @@
   },
   "homepage": "https://github.com/xoorath/markdeep-static#readme",
   "dependencies": {
-    "puppeteer": "^24.21.0"
+    "puppeteer": "^24.22.0"
   }
 }

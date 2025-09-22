@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import puppeteer from 'puppeteer'
 
 const ColorReset = "\x1b[0m";
 const ColorBright = "\x1b[1m";
@@ -29,6 +30,31 @@ const ColorBgCyan = "\x1b[46m";
 const ColorBgWhite = "\x1b[47m";
 const ColorBgGray = "\x1b[100m";
 
+console.time(`${ColorFgCyan}create browser${ColorReset}`);
+const browser = await puppeteer.launch();
+console.timeEnd(`${ColorFgCyan}create browser${ColorReset}`);
+
+async function transformMarkdeep(src, dest)
+{
+    const destFileCwdRelative = path.relative(process.cwd(), dest);
+    console.time(`${ColorFgCyan}xform ${destFileCwdRelative}${ColorReset}`);
+    
+    const htmlIn = `<!DOCTYPE html><meta charset="utf-8">
+${fs.readFileSync(src)}
+<script>markdeepOptions = {};</script>
+<!-- Markdeep: --><style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace}</style><script src="markdeep.min.js"></script><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js?"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>
+`
+    const page = await browser.newPage();
+    await page.setContent(htmlIn, {waitUntil: 'networkidle0'});
+    let html = await page.content();
+
+    html = html.replaceAll('<script', '<!--script');
+    html = html.replaceAll('</script>', '</script-->');
+
+    fs.writeFileSync(dest, html);
+
+    console.timeEnd(`${ColorFgCyan}xform ${destFileCwdRelative}${ColorReset}`);
+}
 
 function printHelp(printFunction=console.log) {
     printFunction(`usage: markdeep-static --in="./input_dir" --out"./output_dir"`);
@@ -142,18 +168,20 @@ const filesToDelete = fs.globSync(path.join(args.out, '**'), { exclude: ['.git']
     .map(existingPath => path.resolve(existingPath));
 console.timeEnd(`${ColorFgCyan}glob files to delete${ColorReset}`);
 
+// stats to print when finished:
+let stats = {
+    filesCopied: 0,
+    filesTransformed: 0,
+    filesDeleted: 0
+};
+
 console.time(`${ColorFgCyan}delete files${ColorReset}`);
 filesToDelete.forEach(existingFile => {
     console.log(`rm ${path.relative(process.cwd(), existingFile)}`);
     fs.unlinkSync(existingFile);
+    stats.filesDeleted++;
 })
 console.timeEnd(`${ColorFgCyan}delete files${ColorReset}`);
-
-// stats to print when finished:
-let stats = {
-    filesCopied: 0,
-    filesTransformed: 0
-};
 
 console.time(`${ColorFgCyan}make output directories${ColorReset}`);
 markdeepTransformPairs
@@ -182,7 +210,6 @@ markdeepTransformPairs
         });
 console.timeEnd(`${ColorFgCyan}make output directories${ColorReset}`);
 
-
 console.time(`${ColorFgCyan}copy non-markdeep files${ColorReset}`);
 otherTransformPairs.forEach(t => {
     console.log(`cp ${path.relative(process.cwd(), t.in)} -> ${path.relative(process.cwd(), t.out)}`);
@@ -192,16 +219,19 @@ otherTransformPairs.forEach(t => {
 console.timeEnd(`${ColorFgCyan}copy non-markdeep files${ColorReset}`);
 
 console.time(`${ColorFgCyan}transform markdeep${ColorReset}`);
-markdeepTransformPairs.forEach(t => {
-    console.log(`xform ${path.relative(process.cwd(), t.in)} -> ${path.relative(process.cwd(), t.out)}`);
-    fs.copyFile(t.in, t.out, fs.constants.COPYFILE_FICLONE, err => err && console.error(err));
+
+
+for(let i = 0; i < markdeepTransformPairs.length; ++i) {
+    await transformMarkdeep(markdeepTransformPairs[i].in, markdeepTransformPairs[i].out);
     stats.filesTransformed++;
-});
+}
+await browser.close();
+
 console.timeEnd(`${ColorFgCyan}transform markdeep${ColorReset}`);
 
 console.timeEnd(`${ColorFgGreen}markdeep-static${ColorReset}`); // overall
 
 console.log(`----------------------------------------
-transformed: ${stats.filesTransformed} copied: ${stats.filesCopied}
+transformed: ${stats.filesTransformed} copied: ${stats.filesCopied} deleted: ${stats.filesDeleted}
 ----------------------------------------
 markdeep-static finished`);
