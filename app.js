@@ -165,7 +165,13 @@ console.timeEnd(`${ColorFgCyan}build other transformation pairs${ColorReset}`);
 console.time(`${ColorFgCyan}glob files to delete${ColorReset}`);
 const filesToDelete = fs.globSync(path.join(args.out, '**'), { exclude: ['.git'] })
     .filter(existingPath => !fs.statSync(existingPath).isDirectory() )
-    .map(existingPath => path.resolve(existingPath));
+    .map(existingPath => path.resolve(existingPath))
+    .filter(existingPath => {
+        return markdeepTransformPairs.indexOf(existingMarkdeepTransformPair => {
+            return existingMarkdeepTransformPair.out == existingPath;
+        }) !== -1;
+    });
+
 console.timeEnd(`${ColorFgCyan}glob files to delete${ColorReset}`);
 
 // stats to print when finished:
@@ -220,8 +226,16 @@ console.timeEnd(`${ColorFgCyan}copy non-markdeep files${ColorReset}`);
 
 console.time(`${ColorFgCyan}transform markdeep${ColorReset}`);
 
-
 for(let i = 0; i < markdeepTransformPairs.length; ++i) {
+    if (fs.existsSync(markdeepTransformPairs[i].out)) {
+        const inStat = fs.statSync(markdeepTransformPairs[i].in);
+        const outStat = fs.statSync(markdeepTransformPairs[i].out);
+        if (outStat.mtimeMs >= inStat.mtimeMs) {
+            console.log(`skipping transform for ${path.relative(process.cwd(), markdeepTransformPairs[i].out)}`);
+            continue;
+        }
+    }
+
     await transformMarkdeep(markdeepTransformPairs[i].in, markdeepTransformPairs[i].out);
     stats.filesTransformed++;
 }
